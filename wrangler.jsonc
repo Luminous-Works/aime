@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "aime",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "send_email": [{ "name": "EMAIL", "remote": true }],
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [{ "name": "EmailAgent", "class_name": "EmailAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EmailAgent"] }],
+  "vars": {
+    "AIME_ALLOWED": "REPLACE-WITH-TONYS-EMAIL@example.com",
+    "AIME_FROM_NAME": "AIME"
+  },
+  "observability": { "enabled": true }
+}

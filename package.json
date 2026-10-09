@@ -1,0 +1,17 @@
+{
+  "name": "aime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/core.test.mjs",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "agents": "^0.28.0",
+    "postal-mime": "^4.0.5"
+  },
+  "devDependencies": {
+    "wrangler": "^4.149.0"
+  }
+}
