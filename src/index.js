@@ -6,7 +6,9 @@ import {
   isAutoReplyEmail,
 } from "agents/email";
 import PostalMime from "postal-mime";
-import { guardEmail, remember, composeReply, cannedReply } from "./core.js";
+import { guardEmail, remember, composeReply, cannedReply, canonicalAddress } from "./core.js";
+import { logMessage, logEvent, listAllow } from "./db.js";
+import { checkAuth, serveApi, renderDashboard } from "./dashboard.js";
 
 export const DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const MAX_BODY = 6000;
@@ -55,28 +57,55 @@ export class EmailAgent extends Agent {
       return;
     }
 
-    // Allowlist + size gate, before any model call.
+    // Allowlist + size gate, before any model call. The stored allowlist (edited
+    // from the dashboard) is folded in with the AIME_ALLOWED env CSV.
+    let extra = [];
+    try {
+      extra = (await listAllow(this.env.DB)).map((r) => r.addr);
+    } catch (e) {
+      console.error(`[aime] allowlist read failed: ${e && e.message}`);
+    }
     const g = guardEmail({
       from,
       subject,
       body,
       allowedCsv: this.env.AIME_ALLOWED || "",
+      extra,
       maxBytes: MAX_BODY,
     });
     if (!g.allow) {
       const dropped = (this.state.dropped || 0) + 1;
       this.setState({ ...this.state, dropped });
+      try {
+        await logEvent(this.env.DB, { kind: "dropped", sender: from, reason: g.reason });
+      } catch (e) {
+        console.error(`[aime] event log failed: ${e && e.message}`);
+      }
       console.log(`[aime] dropped <${from}>: ${g.reason}`);
       return;
     }
 
-    // Remember the inbound turn, bounded.
+    // One thread per correspondent.
+    const threadId = canonicalAddress(from);
+
+    // Remember the inbound turn, bounded, and archive it for the dashboard.
     const thread1 = remember(this.state.thread, {
       role: "user",
       text: body,
       at: new Date().toISOString(),
     });
     this.setState({ ...this.state, thread: thread1, lastAt: new Date().toISOString() });
+    try {
+      await logMessage(this.env.DB, {
+        thread: threadId,
+        direction: "in",
+        sender: from,
+        subject,
+        body,
+      });
+    } catch (e) {
+      console.error(`[aime] message log failed: ${e && e.message}`);
+    }
 
     // Compose the reply. A brain failure degrades to a canned, honest reply.
     let result;
@@ -108,19 +137,48 @@ export class EmailAgent extends Agent {
       body: result.reply,
       secret: this.env.EMAIL_SECRET,
     });
+    try {
+      await logMessage(this.env.DB, {
+        thread: threadId,
+        direction: "out",
+        sender: from,
+        subject: result.subject,
+        body: result.reply,
+      });
+    } catch (e) {
+      console.error(`[aime] reply log failed: ${e && e.message}`);
+    }
     console.log(`[aime] replied to <${from}>`);
   }
 }
 
-// One mailbox. aime@luminaaerospace.com lands here; the local part is the inbox id.
+// One mailbox: aime@<your-domain> lands here; the local part is the inbox id.
 export default {
   email: (message, env, ctx) =>
     routeAgentEmail(message, env, ctx, {
       resolver: createCatchAllEmailResolver("EmailAgent", "aime"),
     }),
-  fetch: (request, env, ctx) =>
-    routeAgentRequest(request, env, ctx) ??
-    new Response("AIME worker online. Inbound: aime@luminaaerospace.com.", {
-      headers: { "content-type": "text/plain" },
-    }),
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === "/health") return new Response("ok");
+    if (url.pathname === "/" || url.pathname === "/admin") {
+      if (!checkAuth(request, env)) {
+        return new Response("AIME — sign in required", {
+          status: 401,
+          headers: { "www-authenticate": 'Basic realm="AIME", charset="UTF-8"' },
+        });
+      }
+      return new Response(renderDashboard(), {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+    if (url.pathname.startsWith("/api/")) {
+      if (!checkAuth(request, env)) return new Response("auth required", { status: 401 });
+      return serveApi(request, env, url);
+    }
+    return (
+      (await routeAgentRequest(request, env, ctx)) ??
+      new Response("AIME worker online.", { headers: { "content-type": "text/plain" } })
+    );
+  },
 };

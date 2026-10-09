@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   canonicalAddress,
   allowedSet,
+  mergeAllowed,
   isAllowed,
   guardEmail,
   remember,
@@ -33,6 +34,17 @@ test("allowlist is case-insensitive and exact on the address", () => {
   assert.equal(allowedSet(",").size, 0);
 });
 
+test("mergeAllowed folds the stored dashboard list into the env CSV, deduped", () => {
+  const merged = mergeAllowed("tony@luminaaerospace.com", [
+    "OX@luminaaerospace.com",
+    "  Tony  ",
+    "",
+  ]);
+  assert.ok(merged.includes("tony@luminaaerospace.com"));
+  assert.ok(merged.includes("ox@luminaaerospace.com"));
+  assert.equal(merged.filter((x) => x === "tony@luminaaerospace.com").length, 1);
+});
+
 test("guard drops strangers before any brain work", () => {
   assert.equal(guardEmail({ from: TONY, subject: "hi", body: "hello", allowedCsv: CSV }).allow, true);
   assert.deepEqual(
@@ -47,6 +59,21 @@ test("guard drops strangers before any brain work", () => {
   );
   assert.equal(
     guardEmail({ from: ADMIN, subject: "hi", body: "y", allowedCsv: CSV }).allow,
+    false
+  );
+});
+
+test("guard accepts the stored dashboard allowlist via extra", () => {
+  assert.equal(
+    guardEmail({ from: "Ox@LuminaAerospace.com", subject: "hi", body: "yo", allowedCsv: CSV, extra: [] }).allow,
+    true
+  );
+  assert.equal(
+    guardEmail({ from: "friend@elsewhere.com", subject: "hi", body: "yo", allowedCsv: CSV, extra: ["Friend@Elsewhere.com"] }).allow,
+    true
+  );
+  assert.equal(
+    guardEmail({ from: "bob@elsewhere.com", subject: "hi", body: "yo", allowedCsv: CSV, extra: ["alice@elsewhere.com"] }).allow,
     false
   );
 });

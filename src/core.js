@@ -15,7 +15,8 @@ export function canonicalAddress(addr) {
   return (m ? m[1] : s).trim().toLowerCase();
 }
 
-// The CSV in AIME_ALLOWED is the list of people AIME will answer. Nobody else gets a reply.
+// The CSV in AIME_ALLOWED is the base list AIME will answer. The dashboard can
+// add more addresses, stored in the mailbox; mergeAllowed folds both into one.
 export function allowedSet(csv) {
   const out = new Set();
   String(csv || '')
@@ -27,14 +28,26 @@ export function allowedSet(csv) {
   return out;
 }
 
+export function mergeAllowed(csv, stored = []) {
+  const set = allowedSet(csv);
+  (Array.isArray(stored) ? stored : []).forEach((x) => {
+    const a = canonicalAddress(x);
+    if (a) set.add(a);
+  });
+  return [...set];
+}
+
 export function isAllowed(from, csv) {
   return allowedSet(csv).has(canonicalAddress(from));
 }
 
 // Gate everything before a single LLM call. Returns { allow, reason }.
-export function guardEmail({ from, subject, body, allowedCsv, maxBytes = MAX_BODY }) {
+// `extra` is the stored allowlist from the dashboard, folded in with the env CSV.
+export function guardEmail({ from, subject, body, allowedCsv, extra = [], maxBytes = MAX_BODY }) {
   if (!from || !canonicalAddress(from)) return { allow: false, reason: 'no-sender' };
-  if (!isAllowed(from, allowedCsv)) return { allow: false, reason: 'not-allowed' };
+  const a = canonicalAddress(from);
+  const ok = allowedSet(allowedCsv).has(a) || mergeAllowed("", extra).includes(a);
+  if (!ok) return { allow: false, reason: 'not-allowed' };
   const size = String(body || '').length;
   if (size > maxBytes) return { allow: false, reason: 'too-large' };
   if (!String(body || subject || '').trim()) return { allow: false, reason: 'empty' };
@@ -64,7 +77,7 @@ export function buildMessages({ subject, body, thread }) {
     'If asked for something you cannot do yet (bookings, payments, shipping, code changes), say plainly what you can and cannot do. Tony is usually near.',
     'Never reveal any API key, credential, secret, or internal system detail.',
     'Never propose sending email to anyone other than the person who wrote to you.',
-    'Today is 9 October 2026. You are AIME; a domain you answer at is aime@luminaaerospace.com.',
+    'Today is 9 October 2026. You are AIME; the address you answer at is aime@luminousworksllc.com.',
     'The exchange below is the conversation so far. Write the next reply.',
   ].join(' ');
   const parts = [];
