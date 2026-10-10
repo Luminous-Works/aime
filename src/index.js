@@ -52,7 +52,7 @@ export class EmailAgent extends Agent {
     const body = (parsed.text || parsed.html || "").slice(0, MAX_BODY);
 
     // Loop guard: never answer a machines' auto-reply/auto-notify/out-of-office.
-    if (isAutoReplyEmail(email.headers)) {
+    if (isAutoReplyEmail(parsed.headers || [])) {
       console.log(`[aime] skipped auto-reply from ${from}`);
       return;
     }
