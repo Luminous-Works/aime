@@ -155,7 +155,7 @@ export class EmailAgent extends Agent {
 // One mailbox: aime@<your-domain> lands here; the local part is the inbox id.
 export default {
   email: (message, env, ctx) =>
-    routeAgentEmail(message, env, ctx, {
+    routeAgentEmail(message, env, {
       resolver: createCatchAllEmailResolver("EmailAgent", "aime"),
     }),
   async fetch(request, env, ctx) {
