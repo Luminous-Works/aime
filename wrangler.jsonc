@@ -18,7 +18,7 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EmailAgent"] }],
   "vars": {
-    "AIME_ALLOWED": "REPLACE-WITH-TONYS-EMAIL@example.com",
+    "AIME_ALLOWED": "owner@luminousworksllc.com",
     "AIME_FROM_NAME": "AIME"
   },
   "observability": { "enabled": true }
